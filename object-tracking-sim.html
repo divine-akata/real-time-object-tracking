@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Object Tracking — Pipeline Simulation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --border: #1e2330;
+    --accent: #00e5a0;
+    --accent2: #3b82f6;
+    --accent3: #f59e0b;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 2rem 1rem 4rem;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding-top: 1rem;
+  }
+
+  .badge {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 3px 10px;
+    letter-spacing: 0.1em;
+    margin-bottom: 1rem;
+    opacity: 0.8;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.4rem, 4vw, 2.2rem);
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 0.5rem;
+  }
+
+  h1 span { color: var(--accent); }
+
+  .subtitle {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 300;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  /* Pipeline canvas area */
+  .sim-wrapper {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+
+  .sim-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-r { background: #ff5f57; }
+  .dot-y { background: #febc2e; }
+  .dot-g { background: #28c840; }
+
+  .sim-body {
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 620px) {
+    .sim-body { grid-template-columns: 1fr; }
+  }
+
+  /* Canvas panels */
+  .canvas-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .panel-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .panel-label .step-num {
+    display: inline-flex;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--border);
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--accent);
+  }
+
+  canvas {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: block;
+    image-rendering: pixelated;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 100px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  .val {
+    color: var(--accent);
+    min-width: 28px;
+    text-align: right;
+  }
+
+  .play-btn {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 5px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .play-btn:hover { background: rgba(0,229,160,0.1); }
+
+  /* Stage breakdown */
+  .stages {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+
+  .stage {
+    background: var(--surface);
+    padding: 1rem;
+    transition: background 0.2s;
+  }
+
+  .stage.active { background: #0f1a14; }
+
+  .stage-icon {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+
+  .stage-name {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+
+  .stage-code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .stage-desc {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+    line-height: 1.5;
+    font-weight: 300;
+  }
+
+  .stage-bar {
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+
+  .stage-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 1px;
+    transition: width 0.1s linear;
+  }
+
+  /* Code snippet */
+  .code-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  pre {
+    padding: 1.25rem 1.5rem;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    overflow-x: auto;
+    color: #94a3b8;
+  }
+
+  .kw { color: #7c86ff; }
+  .fn { color: #00e5a0; }
+  .cm { color: #374151; }
+  .st { color: #f59e0b; }
+  .nm { color: #fb923c; }
+
+  .hl {
+    display: block;
+    background: rgba(0,229,160,0.06);
+    border-left: 2px solid var(--accent);
+    margin: 0 -1.5rem;
+    padding: 0 1.5rem 0 calc(1.5rem - 2px);
+    transition: background 0.3s;
+  }
+
+  .hl.dim { background: transparent; border-left-color: transparent; }
+
+  footer {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3rem;
+    opacity: 0.6;
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <div class="badge">COMPUTER VISION · PYTHON · OPENCV</div>
+    <h1>Real-Time Object<br><span>Tracking</span> Pipeline</h1>
+    <p class="subtitle">Interactive simulation of starter.py — step by step</p>
+  </header>
+
+  <!-- Main simulation -->
+  <div class="sim-wrapper">
+    <div class="sim-header">
+      <div class="dot dot-r"></div>
+      <div class="dot dot-y"></div>
+      <div class="dot dot-g"></div>
+      <span style="margin-left:4px">real-time-object-tracking / starter.py</span>
+    </div>
+
+    <div class="sim-body">
+      <div class="canvas-panel">
+        <div class="panel-label">
+          <span class="step-num">1</span>
+          RAW FRAME (BGR)
+        </div>
+        <canvas id="c-raw" width="320" height="240"></canvas>
+      </div>
+      <div class="canvas-panel">
+        <div class="panel-label">
+          <span class="step-num">2</span>
+          HSV COLOR SPACE
+        </div>
+        <canvas id="c-hsv" width="320" height="240"></canvas>
+      </div>
+      <div class="canvas-panel">
+        <div class="panel-label">
+          <span class="step-num">3</span>
+          COLOR MASK (red range)
+        </div>
+        <canvas id="c-mask" width="320" height="240"></canvas>
+      </div>
+      <div class="canvas-panel">
+        <div class="panel-label">
+          <span class="step-num">4&5</span>
+          DETECTED + BOUNDING BOX
+        </div>
+        <canvas id="c-out" width="320" height="240"></canvas>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="ctrl-group">
+        SPEED
+        <input type="range" id="speed" min="1" max="10" value="5" step="1">
+        <span class="val" id="speed-val">5</span>
+      </div>
+      <div class="ctrl-group">
+        BLOB SIZE
+        <input type="range" id="blobsize" min="20" max="80" value="45" step="1">
+        <span class="val" id="blob-val">45</span>
+      </div>
+      <div class="ctrl-group">
+        OBJECTS
+        <input type="range" id="numblobs" min="1" max="4" value="2" step="1">
+        <span class="val" id="blobs-val">2</span>
+      </div>
+      <button class="play-btn" id="playbtn">&#9646;&#9646; PAUSE</button>
+    </div>
+  </div>
+
+  <!-- Stage indicators -->
+  <div class="stages">
+    <div class="stage" id="s0">
+      <div class="stage-name">STEP 01</div>
+      <div class="stage-code">cap.read()</div>
+      <div class="stage-desc">Grabs one frame from the webcam as a BGR pixel array</div>
+      <div class="stage-bar"><div class="stage-bar-fill" id="bar0"></div></div>
+    </div>
+    <div class="stage" id="s1">
+      <div class="stage-name">STEP 02</div>
+      <div class="stage-code">cvtColor(BGR→HSV)</div>
+      <div class="stage-desc">Converts color space so hue can be filtered as a single value</div>
+      <div class="stage-bar"><div class="stage-bar-fill" id="bar1"></div></div>
+    </div>
+    <div class="stage" id="s2">
+      <div class="stage-name">STEP 03</div>
+      <div class="stage-code">inRange(mask)</div>
+      <div class="stage-desc">Pixels matching the red HSV range become white; rest black</div>
+      <div class="stage-bar"><div class="stage-bar-fill" id="bar2"></div></div>
+    </div>
+    <div class="stage" id="s3">
+      <div class="stage-name">STEP 04</div>
+      <div class="stage-code">findContours()</div>
+      <div class="stage-desc">Traces edges of white blobs and filters by minimum area</div>
+      <div class="stage-bar"><div class="stage-bar-fill" id="bar3"></div></div>
+    </div>
+    <div class="stage" id="s4">
+      <div class="stage-name">STEP 05</div>
+      <div class="stage-code">rectangle()</div>
+      <div class="stage-desc">Draws a green bounding box around each detected object</div>
+      <div class="stage-bar"><div class="stage-bar-fill" id="bar4"></div></div>
+    </div>
+  </div>
+
+  <!-- Code -->
+  <div class="code-block">
+    <div class="code-header">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <span style="margin-left:4px">starter.py</span>
+    </div>
+    <pre id="code-pre"><span class="kw">import</span> cv2
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+cap = cv2.<span class="fn">VideoCapture</span>(<span class="nm">0</span>)         <span class="cm"># open webcam</span>
+
+<span class="kw">while</span> <span class="kw">True</span>:
+<span id="hl0" class="hl">    ret, frame = cap.<span class="fn">read</span>()         <span class="cm"># step 1 — grab frame</span>
+    <span class="kw">if not</span> ret: <span class="kw">break</span>
+</span>
+<span id="hl1" class="hl">    hsv = cv2.<span class="fn">cvtColor</span>(frame,       <span class="cm"># step 2 — BGR → HSV</span>
+        cv2.COLOR_BGR2HSV)
+</span>
+<span id="hl2" class="hl">    lower_red = np.<span class="fn">array</span>([<span class="nm">0</span>,<span class="nm">120</span>,<span class="nm">70</span>]) <span class="cm"># step 3 — color mask</span>
+    upper_red = np.<span class="fn">array</span>([<span class="nm">10</span>,<span class="nm">255</span>,<span class="nm">255</span>])
+    mask = cv2.<span class="fn">inRange</span>(hsv, lower_red, upper_red)
+</span>
+<span id="hl3" class="hl">    contours, _ = cv2.<span class="fn">findContours</span>( <span class="cm"># step 4 — find edges</span>
+        mask, cv2.RETR_TREE,
+        cv2.CHAIN_APPROX_SIMPLE)
+</span>
+<span id="hl4" class="hl">    <span class="kw">for</span> cnt <span class="kw">in</span> contours:            <span class="cm"># step 5 — draw boxes</span>
+        <span class="kw">if</span> cv2.<span class="fn">contourArea</span>(cnt) > <span class="nm">500</span>:
+            x,y,w,h = cv2.<span class="fn">boundingRect</span>(cnt)
+            cv2.<span class="fn">rectangle</span>(frame,(x,y),(x+w,y+h),(<span class="nm">0</span>,<span class="nm">255</span>,<span class="nm">0</span>),<span class="nm">2</span>)
+</span>
+    cv2.<span class="fn">imshow</span>(<span class="st">"Object Tracking"</span>, frame)
+    <span class="kw">if</span> cv2.<span class="fn">waitKey</span>(<span class="nm">1</span>) & <span class="nm">0xFF</span> == <span class="nm">27</span>: <span class="kw">break</span>
+
+cap.<span class="fn">release</span>()
+cv2.<span class="fn">destroyAllWindows</span>()</pre>
+  </div>
+
+  <footer>
+    <a href="https://github.com/divine-akata/real-time-object-tracking">github.com/divine-akata/real-time-object-tracking</a>
+    &nbsp;·&nbsp; Built with Python + OpenCV
+    &nbsp;·&nbsp; Simulation made with <a href="https://claude.ai">Claude</a> (Anthropic)
+  </footer>
+
+</div>
+
+<script>
+const W = 320, H = 240;
+const cRaw  = document.getElementById('c-raw');
+const cHsv  = document.getElementById('c-hsv');
+const cMask = document.getElementById('c-mask');
+const cOut  = document.getElementById('c-out');
+[cRaw,cHsv,cMask,cOut].forEach(c=>{ c.width=W; c.height=H; });
+const ctxR = cRaw.getContext('2d');
+const ctxH = cHsv.getContext('2d');
+const ctxM = cMask.getContext('2d');
+const ctxO = cOut.getContext('2d');
+
+let running = true;
+let frame = 0;
+let blobs = [];
+
+const speedEl   = document.getElementById('speed');
+const blobsizeEl= document.getElementById('blobsize');
+const numblobsEl= document.getElementById('numblobs');
+const speedVal  = document.getElementById('speed-val');
+const blobVal   = document.getElementById('blob-val');
+const blobsVal  = document.getElementById('blobs-val');
+const playBtn   = document.getElementById('playbtn');
+
+speedEl.oninput    = () => speedVal.textContent  = speedEl.value;
+blobsizeEl.oninput = () => blobVal.textContent   = blobsizeEl.value;
+numblobsEl.oninput = () => { blobsVal.textContent = numblobsEl.value; initBlobs(); };
+playBtn.onclick = () => { running = !running; playBtn.textContent = running ? '❚❚ PAUSE' : '▶ PLAY'; };
+
+function initBlobs() {
+  const n = parseInt(numblobsEl.value);
+  blobs = Array.from({length:n}, (_, i) => ({
+    x: 60 + Math.random()*(W-120),
+    y: 60 + Math.random()*(H-120),
+    vx: (1.2 + Math.random()*1.2) * (Math.random()<0.5?1:-1),
+    vy: (1.0 + Math.random()*1.0) * (Math.random()<0.5?1:-1),
+    hue: i===0 ? 0 : (30 + Math.random()*300),
+    isRed: i===0,
+  }));
+}
+initBlobs();
+
+function hsvToRgb(h,s,v) {
+  h=h/360; s=s/100; v=v/100;
+  let r,g,b;
+  const i=Math.floor(h*6), f=h*6-i, p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s);
+  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;case 5:r=v;g=p;b=q;break;}
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
+
+function drawNoise(ctx, imageData) {
+  const d = imageData.data;
+  for(let i=0;i<d.length;i+=4) {
+    const n = (Math.random()-0.5)*18;
+    d[i]  = Math.max(0,Math.min(255,d[i]+n));
+    d[i+1]= Math.max(0,Math.min(255,d[i+1]+n));
+    d[i+2]= Math.max(0,Math.min(255,d[i+2]+n));
+  }
+}
+
+function tick() {
+  if(!running){ requestAnimationFrame(tick); return; }
+
+  const speed = parseFloat(speedEl.value)*0.5;
+  const bsize = parseInt(blobsizeEl.value);
+  frame++;
+
+  blobs.forEach(b => {
+    b.x += b.vx * speed;
+    b.y += b.vy * speed;
+    if(b.x<bsize||b.x>W-bsize) b.vx*=-1;
+    if(b.y<bsize||b.y>H-bsize) b.vy*=-1;
+    b.x=Math.max(bsize,Math.min(W-bsize,b.x));
+    b.y=Math.max(bsize,Math.min(H-bsize,b.y));
+  });
+
+  const stageT = (frame % 60) / 60;
+  const stageIdx = Math.floor(stageT * 5);
+  const stageProg = (stageT * 5) % 1;
+
+  for(let i=0;i<5;i++) {
+    const el = document.getElementById('s'+i);
+    const bar = document.getElementById('bar'+i);
+    const hl = document.getElementById('hl'+i);
+    if(i===stageIdx) {
+      el.classList.add('active');
+      bar.style.width = Math.round(stageProg*100)+'%';
+      hl.classList.remove('dim');
+    } else {
+      el.classList.remove('active');
+      bar.style.width = i<stageIdx ? '100%' : '0%';
+      hl.classList.add('dim');
+    }
+  }
+
+  const rawImg  = ctxR.createImageData(W,H);
+  const hsvImg  = ctxH.createImageData(W,H);
+  const maskImg = ctxM.createImageData(W,H);
+
+  for(let py=0;py<H;py++) {
+    for(let px=0;px<W;px++) {
+      const idx=(py*W+px)*4;
+
+      let closestBlob = null;
+      let minDist = Infinity;
+      blobs.forEach(b => {
+        const dx=px-b.x, dy=py-b.y;
+        const d=Math.sqrt(dx*dx+dy*dy);
+        if(d<minDist){minDist=d;closestBlob=b;}
+      });
+
+      let pr=18,pg=22,pb=30;
+      let isOnBlob=false;
+      let blobH=200;
+
+      if(closestBlob && minDist<bsize) {
+        const t=1-(minDist/bsize);
+        blobH=closestBlob.hue;
+        const [cr,cg,cb]=hsvToRgb(blobH,85,90);
+        pr=Math.round(pr*(1-t)+cr*t);
+        pg=Math.round(pg*(1-t)+cg*t);
+        pb=Math.round(pb*(1-t)+cb*t);
+        isOnBlob=true;
+      }
+
+      rawImg.data[idx]=pr;
+      rawImg.data[idx+1]=pg;
+      rawImg.data[idx+2]=pb;
+      rawImg.data[idx+3]=255;
+
+      const [hr,hg,hb]=hsvToRgb(closestBlob&&isOnBlob?blobH:200, isOnBlob?80:20, isOnBlob?70:15);
+      hsvImg.data[idx]=hr;
+      hsvImg.data[idx+1]=hg;
+      hsvImg.data[idx+2]=hb;
+      hsvImg.data[idx+3]=255;
+
+      const isRed = closestBlob && isOnBlob && closestBlob.isRed;
+      const mv = isRed?255:0;
+      maskImg.data[idx]=mv;
+      maskImg.data[idx+1]=mv;
+      maskImg.data[idx+2]=mv;
+      maskImg.data[idx+3]=255;
+    }
+  }
+
+  drawNoise(ctxR, rawImg);
+  ctxR.putImageData(rawImg,0,0);
+
+  ctxH.putImageData(hsvImg,0,0);
+  ctxH.fillStyle='rgba(0,0,0,0.3)';
+  ctxH.fillRect(0,0,W,H);
+  ctxH.putImageData(hsvImg,0,0);
+
+  ctxM.putImageData(maskImg,0,0);
+
+  ctxO.putImageData(rawImg,0,0);
+
+  blobs.forEach(b => {
+    if(!b.isRed) return;
+    const x=Math.round(b.x-bsize), y=Math.round(b.y-bsize);
+    const w=bsize*2, h=bsize*2;
+    ctxO.strokeStyle='#00ff88';
+    ctxO.lineWidth=2;
+    ctxO.strokeRect(x,y,w,h);
+
+    ctxO.fillStyle='#00ff88';
+    ctxO.font='bold 10px JetBrains Mono, monospace';
+    ctxO.fillText('DETECTED',x+4,y-4<8?y+14:y-4);
+  });
+
+  ctxO.fillStyle='rgba(0,229,160,0.9)';
+  ctxO.font='10px JetBrains Mono, monospace';
+  ctxO.fillText('frame #'+frame, 6, 14);
+
+  requestAnimationFrame(tick);
+}
+
+tick();
+</script>
+</body>
+</html>
